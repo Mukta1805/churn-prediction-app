@@ -159,8 +159,8 @@ class TrainModel(d6tflow.tasks.TaskPickle):
             param_distributions=param_dist,
             n_iter=HYPEROPT_MAX_EVALS,
             scoring="roc_auc",
-            cv=3,
-            n_jobs=-1,
+            cv=2,
+            n_jobs=1,
             random_state=42,
         )
         search.fit(X_train, y_train)
