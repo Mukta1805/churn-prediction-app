@@ -6,6 +6,9 @@ import os
 # Ensure project root is on the path so imports work with `streamlit run app.py`
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import matplotlib
+matplotlib.use("Agg")
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -145,6 +148,7 @@ if st.session_state.analysis_complete:
         with col1:
             st.subheader("ROC-AUC Comparison")
             if comparison:
+                plt.close("all")
                 fig, ax = plt.subplots(figsize=(6, 4))
                 names = [c["display_name"] for c in comparison]
                 aucs = [c["roc_auc"] for c in comparison]
@@ -152,20 +156,21 @@ if st.session_state.analysis_complete:
                 ax.barh(names, aucs, color=colors)
                 ax.set_xlim(0.6, 1.0)
                 ax.set_xlabel("ROC-AUC")
-                plt.tight_layout()
+                fig.tight_layout()
                 st.pyplot(fig)
                 plt.close(fig)
 
         with col2:
             st.subheader("Profit vs Threshold")
             if best and "threshold_curve" in best:
+                plt.close("all")
                 fig, ax = plt.subplots(figsize=(6, 4))
                 ax.plot(best["threshold_curve"], best["profit_curve"], color="#2563EB")
                 ax.axvline(best["optimal_threshold"], color="red", linestyle="--", label=f"Optimal: {best['optimal_threshold']:.3f}")
                 ax.set_xlabel("Classification Threshold")
                 ax.set_ylabel("Expected Profit ($)")
                 ax.legend()
-                plt.tight_layout()
+                fig.tight_layout()
                 st.pyplot(fig)
                 plt.close(fig)
 
@@ -173,14 +178,14 @@ if st.session_state.analysis_complete:
         st.subheader("Top Feature Drivers (SHAP)")
         importances = state.get("feature_importances", [])
         if importances:
-            top_n = importances[:15]
+            plt.close("all")
             fig, ax = plt.subplots(figsize=(8, 6))
             features = [f["feature"] for f in reversed(top_n)]
             values = [f["importance"] for f in reversed(top_n)]
             ax.barh(features, values, color="#7C3AED")
             ax.set_xlabel("Mean |SHAP value|")
             ax.set_title(f"Top 15 Features — {MODEL_DISPLAY_NAMES.get(state['best_model_name'], '')}")
-            plt.tight_layout()
+            fig.tight_layout()
             st.pyplot(fig)
             plt.close(fig)
 
@@ -189,9 +194,10 @@ if st.session_state.analysis_complete:
         feature_names = state.get("feature_names")
         if shap_vals is not None and feature_names is not None:
             st.subheader("SHAP Summary Plot")
-            fig, ax = plt.subplots(figsize=(10, 8))
+            plt.close("all")
             shap.summary_plot(shap_vals, feature_names=feature_names, show=False, max_display=20)
-            st.pyplot(fig)
+            st.pyplot(plt.gcf())
+            plt.close("all")
             plt.close(fig)
 
     # ── Tab 2: Insights ──
