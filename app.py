@@ -62,9 +62,18 @@ with st.sidebar:
         st.success(f"Loaded {len(raw_df)} rows, {len(raw_df.columns)} columns")
         st.dataframe(raw_df.head(), height=200)
 
+        st.subheader("Churn Horizon")
+        selected_horizon = st.selectbox(
+            "Define churn window",
+            options=[30, 60, 90],
+            format_func=lambda h: f"{h}-day churn",
+            help="Customers who churned within this window will be labelled as churned (1). Changing this redefines the supervised learning problem.",
+        )
+
         run_btn = st.button("Run Analysis", type="primary", use_container_width=True)
     else:
         raw_df = None
+        selected_horizon = 30
         run_btn = False
 
     st.divider()
@@ -79,13 +88,14 @@ if run_btn and raw_df is not None:
     st.session_state.chat_history = []
 
     graph = build_graph()
-    initial_state = {"raw_df": raw_df}
+    initial_state = {"raw_df": raw_df, "selected_horizon": selected_horizon}
 
     step_labels = {
-        "clean_data": "Step 1/4: Cleaning data...",
-        "run_model_pipeline": "Step 2/4: Training 5 models with Bayesian optimization (this may take a few minutes)...",
-        "compute_shap": "Step 3/4: Computing SHAP explanations...",
-        "generate_insights": "Step 4/4: Generating business insights with AI...",
+        "horizon_definition": f"Step 1/5: Defining {selected_horizon}-day churn horizon...",
+        "clean_data": "Step 2/5: Cleaning data...",
+        "run_model_pipeline": "Step 3/5: Training 5 models with Bayesian optimization (this may take a few minutes)...",
+        "compute_shap": "Step 4/5: Computing SHAP explanations...",
+        "generate_insights": "Step 5/5: Generating business insights with AI...",
     }
 
     final_state = dict(initial_state)
@@ -236,13 +246,15 @@ else:
     with st.expander("How it works"):
         st.markdown("""
 1. **Upload** your customer churn dataset (CSV with a `churn` column)
-2. **Click "Run Analysis"** — the system will:
+2. **Select a churn horizon** (30 / 60 / 90 days) — this defines what "churned" means for the model
+3. **Click "Run Analysis"** — the system will:
+   - Build horizon labels and set the active churn target
    - Clean the data (drop missing values)
    - Train 5 ML models using d6tflow + Hyperopt Bayesian optimization
    - Select the best model by ROC-AUC
    - Compute SHAP feature explanations
    - Generate business insights using AI
-3. **Explore results** — model comparison, feature importance, SHAP plots
-4. **Read AI insights** — automated analysis of churn drivers and retention strategies
-5. **Ask questions** — chat with the AI about your specific analysis
+4. **Explore results** — model comparison, feature importance, SHAP plots
+5. **Read AI insights** — automated analysis of churn drivers and retention strategies
+6. **Ask questions** — chat with the AI about your specific analysis
         """)

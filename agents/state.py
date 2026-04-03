@@ -11,6 +11,10 @@ class PipelineState(TypedDict, total=False):
     raw_df: pd.DataFrame
     clean_df: pd.DataFrame
 
+    # ── Horizon Definition outputs ──
+    selected_horizon: int           # e.g. 30, 60, or 90
+    df_master: pd.DataFrame         # df with all horizon labels (churn_30d/60d/90d) before leakage drop
+
     # ── Progress ──
     current_step: str
     progress_messages: list[str]
