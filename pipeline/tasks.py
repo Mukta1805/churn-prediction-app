@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import d6tflow
 
-from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import roc_auc_score, f1_score, average_precision_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -19,6 +19,8 @@ from sklearn.pipeline import Pipeline
 
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
+
+from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
 
 from pipeline.config import (
     BUSINESS_CONSTANTS,
@@ -153,22 +155,33 @@ class TrainModel(d6tflow.tasks.TaskPickle):
             ("model", model),
         ])
 
-        # ---- RandomizedSearchCV (replaces Hyperopt for cloud compatibility) ----
-        search = RandomizedSearchCV(
-            pipeline,
-            param_distributions=param_dist,
-            n_iter=HYPEROPT_MAX_EVALS,
-            scoring="roc_auc",
-            cv=2,
-            n_jobs=1,
-            random_state=42,
+        # ---- Hyperopt Bayesian Optimization ----
+        def objective(params):
+            pipeline.set_params(**params)
+            score = cross_val_score(
+                pipeline, X_train, y_train,
+                scoring="roc_auc", cv=3, n_jobs=-1,
+            ).mean()
+            return {"loss": -score, "status": STATUS_OK}
+
+        space = {k: hp.choice(k, v) for k, v in param_dist.items()}
+
+        trials = Trials()
+        best = fmin(
+            fn=objective,
+            space=space,
+            algo=tpe.suggest,
+            max_evals=HYPEROPT_MAX_EVALS,
+            trials=trials,
+            rstate=np.random.default_rng(42),
+            show_progressbar=False,
         )
-        search.fit(X_train, y_train)
 
-        best_pipeline = search.best_estimator_
-        best_params = search.best_params_
+        best_params = space_eval(space, best)
+        pipeline.set_params(**best_params)
+        pipeline.fit(X_train, y_train)
 
-        y_prob = best_pipeline.predict_proba(X_test)[:, 1]
+        y_prob = pipeline.predict_proba(X_test)[:, 1]
 
         # ---- Threshold Optimisation (Business Value) ----
         cv = BUSINESS_CONSTANTS["customer_value"]
@@ -206,7 +219,7 @@ class TrainModel(d6tflow.tasks.TaskPickle):
 
         print(f"  ROC AUC: {auc:.4f} | F1: {f1:.4f} | Threshold: {best_threshold:.3f} | Profit: ${best_profit:.0f}")
 
-        self.save(best_pipeline)
+        self.save(pipeline)
         self.saveMeta({
             "roc_auc": float(auc),
             "pr_auc": float(pr_auc),

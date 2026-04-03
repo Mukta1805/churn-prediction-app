@@ -8,18 +8,19 @@ BUSINESS_CONSTANTS = {
     "missed_churn_loss": 500,
 }
 
-# Models to train (dropped RF — slowest and most memory-hungry)
-MODEL_TYPES = ["logreg", "gb", "xgb", "lgbm"]
+# Models to train
+MODEL_TYPES = ["logreg", "rf", "gb", "xgb", "lgbm"]
 
 MODEL_DISPLAY_NAMES = {
     "logreg": "Logistic Regression",
+    "rf": "Random Forest",
     "gb": "Gradient Boosting",
     "xgb": "XGBoost",
     "lgbm": "LightGBM",
 }
 
-# Hyperparameter search settings
-HYPEROPT_MAX_EVALS = 4
+# Hyperopt settings
+HYPEROPT_MAX_EVALS = 8
 
 # Columns to drop before modelling
 COLUMNS_TO_DROP = ["customer_id", "city"]
@@ -28,4 +29,4 @@ COLUMNS_TO_DROP = ["customer_id", "city"]
 TARGET_COLUMN = "churn"
 
 # SHAP settings
-SHAP_SAMPLE_SIZE = 100
+SHAP_SAMPLE_SIZE = 300
