@@ -29,11 +29,17 @@ MODEL_DISPLAY_NAMES = {
 # Hyperopt settings
 HYPEROPT_MAX_EVALS = 8
 
-# Columns to drop before modelling
-COLUMNS_TO_DROP = ["customer_id", "city"]
-
-# Target column
-TARGET_COLUMN = "churn"
+# ---------------------------------------------------------------------------
+# Default schema — used to seed PipelineState["schema"] in app.py.
+# Each agent reads from state["schema"] (NOT from these constants), so the
+# same pipeline works on any churn dataset whose schema is provided here.
+# ---------------------------------------------------------------------------
+DEFAULT_SCHEMA = {
+    "target_col": "churn",
+    "id_cols": ["customer_id", "city"],
+    "tenure_col": "tenure_months",   # None → horizon agent is skipped
+    "positive_label": 1,             # raw value in target_col that means "churned"
+}
 
 # SHAP settings
 SHAP_SAMPLE_SIZE = 300

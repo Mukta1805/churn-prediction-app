@@ -12,12 +12,16 @@ import pandas as pd
 import d6tflow
 
 from pipeline.config import (
-    COLUMNS_TO_DROP,
-    TARGET_COLUMN,
     MODEL_TYPES,
     MODEL_DISPLAY_NAMES,
 )
-from pipeline.tasks import PrepareData, TrainModel, set_dataframe, set_imbalance_config
+from pipeline.tasks import (
+    PrepareData,
+    TrainModel,
+    set_dataframe,
+    set_imbalance_config,
+    set_target_col,
+)
 from utils.shap_utils import compute_shap_values
 from agents.state import PipelineState
 
@@ -27,22 +31,27 @@ from agents.state import PipelineState
 # ---------------------------------------------------------------------------
 def clean_data_node(state: PipelineState) -> dict:
     df = state["raw_df"].copy()
+    schema = state["schema"]
+    target_col = schema["target_col"]
+    id_cols = schema.get("id_cols", [])
+
     rows_before = len(df)
 
-    # Drop columns that aren't useful for modelling
-    # NaN handling was already done by missing_values_node upstream
-    cols_to_drop = [c for c in COLUMNS_TO_DROP if c in df.columns]
+    # Drop columns flagged as IDs / non-modellable in the schema.
+    # (NaN handling was done by missing_values_node upstream.)
+    cols_to_drop = [c for c in id_cols if c in df.columns]
     df = df.drop(columns=cols_to_drop)
     rows_after = len(df)
 
     # Dataset summary for the insight agent later
-    churn_rate = df[TARGET_COLUMN].mean() * 100
+    churn_rate = df[target_col].mean() * 100
     summary = {
         "rows": rows_after,
         "columns": len(df.columns),
         "rows_dropped": rows_before - rows_after,
         "churn_rate_pct": round(churn_rate, 2),
-        "features": [c for c in df.columns if c != TARGET_COLUMN],
+        "target_col": target_col,
+        "features": [c for c in df.columns if c != target_col],
         "numeric_features": df.select_dtypes(exclude=["object"]).columns.tolist(),
         "categorical_features": df.select_dtypes(include=["object"]).columns.tolist(),
     }
@@ -64,9 +73,11 @@ def clean_data_node(state: PipelineState) -> dict:
 # ---------------------------------------------------------------------------
 def run_model_pipeline_node(state: PipelineState) -> dict:
     df_clean = state["clean_df"]
+    target_col = state["schema"]["target_col"]
 
-    # Inject the dataframe and imbalance config into the pipeline module
+    # Inject the dataframe, target column, and imbalance config into the pipeline module
     set_dataframe(df_clean)
+    set_target_col(target_col)
     set_imbalance_config(state.get("imbalance_config", {}))
 
     # Use a unique directory to avoid conflicts between runs

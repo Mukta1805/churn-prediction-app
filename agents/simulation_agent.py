@@ -8,6 +8,8 @@ Public API:
   explain_simulation(baseline, result, constants) → str
 """
 
+from __future__ import annotations
+
 import numpy as np
 from openai import OpenAI
 

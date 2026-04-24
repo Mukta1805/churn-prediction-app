@@ -5,7 +5,8 @@ from agents.state import PipelineState
 
 def class_imbalance_node(state: PipelineState) -> dict:
     df = state["raw_df"]
-    target = df["churn"]
+    target_col = state["schema"]["target_col"]
+    target = df[target_col]
 
     n_total = len(target)
     n_minority = int(target.sum())
@@ -33,7 +34,7 @@ def class_imbalance_node(state: PipelineState) -> dict:
     status = "imbalanced" if is_imbalanced else "balanced"
     msg = (
         f"Class ratio: {minority_ratio:.1%} minority "
-        f"({n_minority:,} churned / {n_total:,} total) — {status}"
+        f"({n_minority:,} positive / {n_total:,} total) — {status}"
     )
     if is_imbalanced:
         msg += (

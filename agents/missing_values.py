@@ -7,6 +7,8 @@ Sub-steps:
   5d. apply_strategies  – pure Python: execute the approved imputation rules
 """
 
+from __future__ import annotations
+
 import json
 
 import pandas as pd
@@ -49,7 +51,7 @@ def _profile_missing(df: pd.DataFrame) -> list[dict]:
 # 5b: LLM reasoning — one call per column
 # ---------------------------------------------------------------------------
 _REASON_PROMPT = """\
-You are analysing a customer churn dataset. One column has missing values.
+You are analysing a customer-level dataset used for churn prediction. One column has missing values.
 
 Column: {column}
 Data type: {dtype}

@@ -25,7 +25,6 @@ from hyperopt import fmin, tpe, hp, Trials, STATUS_OK, space_eval
 from pipeline.config import (
     BUSINESS_CONSTANTS,
     HYPEROPT_MAX_EVALS,
-    TARGET_COLUMN,
 )
 
 # ---------------------------------------------------------------------------
@@ -33,6 +32,7 @@ from pipeline.config import (
 # ---------------------------------------------------------------------------
 _dataframe: pd.DataFrame = None
 _imbalance_config: dict = {}
+_target_col: str = "churn"  # default; overridden by set_target_col()
 
 
 def set_dataframe(df: pd.DataFrame):
@@ -47,6 +47,12 @@ def set_imbalance_config(config: dict):
     _imbalance_config = config or {}
 
 
+def set_target_col(target_col: str):
+    """Call this before flow.run() to inject the target column name."""
+    global _target_col
+    _target_col = target_col
+
+
 # ---------------------------------------------------------------------------
 # Task 1: Prepare Data (train/test split)
 # ---------------------------------------------------------------------------
@@ -55,8 +61,8 @@ class PrepareData(d6tflow.tasks.TaskPickle):
     def run(self):
         df = _dataframe.copy()
 
-        X = df.drop(TARGET_COLUMN, axis=1)
-        y = df[TARGET_COLUMN]
+        X = df.drop(_target_col, axis=1)
+        y = df[_target_col]
 
         X_train, X_test, y_train, y_test = train_test_split(
             X, y,

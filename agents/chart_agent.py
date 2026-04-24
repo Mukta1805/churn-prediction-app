@@ -10,6 +10,8 @@ Charts:
   lift_chart_figure            – Decile lift over random baseline
 """
 
+from __future__ import annotations
+
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import precision_recall_curve, auc

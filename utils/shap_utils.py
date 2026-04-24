@@ -70,14 +70,28 @@ def compute_shap_values(best_pipeline, X_test, model_type: str):
 
 
 def _get_feature_names(preprocessor):
-    """Extract feature names from a fitted ColumnTransformer."""
+    """Extract feature names from a fitted ColumnTransformer.
+
+    Skips transformers whose `columns` list is empty — sklearn does not fit
+    these, so calling `get_feature_names_out` on them raises NotFittedError.
+    This happens when the input dataframe has, for example, zero categorical
+    columns to feed the OneHotEncoder.
+    """
     names = []
     for name, transformer, columns in preprocessor.transformers_:
         if name == "remainder":
             continue
+        # No columns assigned → transformer was skipped during fit. Nothing to add.
+        if columns is None or len(columns) == 0:
+            continue
+        # 'passthrough' / 'drop' are strings, not estimators
+        if isinstance(transformer, str):
+            if transformer == "passthrough":
+                names.extend(columns)
+            # 'drop' contributes no columns
+            continue
         if hasattr(transformer, "get_feature_names_out"):
             names.extend(transformer.get_feature_names_out(columns))
         else:
-            # passthrough
             names.extend(columns)
     return list(names)
