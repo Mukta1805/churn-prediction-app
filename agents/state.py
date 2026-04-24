@@ -10,6 +10,7 @@ class PipelineState(TypedDict, total=False):
     # ── Input ──
     raw_df: pd.DataFrame
     clean_df: pd.DataFrame
+    project_overview: str            # user-provided project/dataset overview (required in UI)
 
     # ── Horizon Definition outputs ──
     selected_horizon: int           # e.g. 30, 60, or 90

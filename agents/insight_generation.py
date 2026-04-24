@@ -24,6 +24,7 @@ def _get_client():
 # Build the context string used by both auto-insights and chat
 # ---------------------------------------------------------------------------
 def _build_context(state: PipelineState) -> str:
+    project_overview = (state.get("project_overview") or "").strip()
     summary = state.get("dataset_summary", {})
     comparison = state.get("model_comparison", [])
     best = state.get("best_model_metrics", {})
@@ -43,8 +44,15 @@ def _build_context(state: PipelineState) -> str:
     feat_lines = [f"  {i+1}. {f['feature']} (SHAP importance: {f['importance']:.4f})"
                   for i, f in enumerate(top_features)]
 
+    overview_block = ""
+    if project_overview:
+        overview_block = f"""
+PROJECT / DATASET OVERVIEW (USER-PROVIDED):
+{project_overview}
+""".strip() + "\n\n"
+
     context = f"""
-DATASET SUMMARY:
+{overview_block}DATASET SUMMARY:
 - {summary.get('rows', '?')} customers, {summary.get('columns', '?')} features
 - Churn rate: {summary.get('churn_rate_pct', '?')}%
 - {summary.get('rows_dropped', 0)} rows dropped due to missing values
@@ -74,6 +82,7 @@ TOP FEATURES BY SHAP IMPORTANCE:
 # ---------------------------------------------------------------------------
 INSIGHTS_SYSTEM_PROMPT = """You are a senior business analyst specializing in customer churn prediction.
 You will receive ML model results and SHAP feature analysis from a churn prediction pipeline.
+You may also receive a user-provided project/dataset overview describing the business context.
 Provide clear, actionable business insights in markdown format.
 
 Structure your response as:
@@ -123,9 +132,10 @@ def generate_insights_node(state: PipelineState) -> dict:
 # ---------------------------------------------------------------------------
 CHAT_SYSTEM_PROMPT = """You are a churn prediction analyst assistant. You have access to the results
 of a machine learning pipeline that trained 5 models on customer churn data.
+You may also receive a user-provided project/dataset overview describing the business context.
 
 Answer questions about the model results, feature importance, customer segments,
-and retention strategies. Be specific and reference the data provided.
+and retention strategies. Be specific and reference the data provided, and incorporate the project/dataset overview when relevant.
 
 If asked about something not covered by the data, say so clearly."""
 
