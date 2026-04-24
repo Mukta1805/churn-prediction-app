@@ -13,15 +13,29 @@ git clone https://github.com/Mukta1805/churn-prediction-app.git
 cd churn-prediction-app
 ```
 
-### 2. Install dependencies
+### 2. Create a virtual environment
 
 Requires **Python 3.9+**.
+
+Conda:
+
+```bash
+conda create -n churn-pred python=3.9 -y && conda activate churn-pred
+```
+
+venv:
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+```
+
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Set up your OpenAI API key
+### 4. Set up your OpenAI API key
 
 Copy the example env file and add your key:
 
@@ -37,7 +51,7 @@ OPENAI_API_KEY=sk-your-key-here
 
 You can get an API key at https://platform.openai.com/api-keys
 
-### 4. Run the app
+### 5. Run the app
 
 ```bash
 streamlit run app.py

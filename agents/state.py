@@ -10,6 +10,7 @@ class PipelineState(TypedDict, total=False):
     # ── Input ──
     raw_df: pd.DataFrame
     clean_df: pd.DataFrame
+    project_overview: str           # user-provided project/dataset context (required in UI)
 
     # ── Schema (set in app.py before the graph runs) ──
     # Decouples the pipeline from any single dataset's column names.

@@ -22,6 +22,7 @@ if "OPENAI_API_KEY" in st.secrets:
 
 from agents.graph import build_graph
 from agents.insight_generation import handle_chat_question
+from agents.results_explainer import explain_results, handle_results_question
 from agents.chart_agent import (
     pr_curve_figure,
     probability_distribution_figure,
@@ -59,6 +60,10 @@ if "sim_explanation" not in st.session_state:
     st.session_state.sim_explanation = None
 if "sim_constants" not in st.session_state:
     st.session_state.sim_constants = None
+if "results_explanation" not in st.session_state:
+    st.session_state.results_explanation = None
+if "results_chat_history" not in st.session_state:
+    st.session_state.results_chat_history = []
 
 # ---------------------------------------------------------------------------
 # Sidebar — Upload
@@ -72,10 +77,43 @@ with st.sidebar:
     )
 
     schema = None  # filled in after upload
+    project_overview = ""
     if uploaded_file is not None:
         raw_df = pd.read_csv(uploaded_file)
         st.success(f"Loaded {len(raw_df)} rows, {len(raw_df.columns)} columns")
         st.dataframe(raw_df.head(), height=200)
+
+        # ── Project / Dataset Overview (required) ──
+        st.subheader("Project / Dataset Overview")
+        st.caption(
+            "Required. A short description of the business context so the AI can tailor "
+            "insights and Q&A to your use case."
+        )
+        overview_text = st.text_area(
+            "Describe the project and dataset (1–10 sentences)",
+            placeholder=(
+                "Example: This dataset comes from our subscription SaaS product. "
+                "Each row is a customer account with usage, billing, and support "
+                "activity. Churn means cancellation within the selected horizon..."
+            ),
+            height=140,
+        )
+        overview_file = st.file_uploader(
+            "Or upload a text/markdown file with the overview",
+            type=["txt", "md"],
+            help="Accepted formats: .txt, .md",
+        )
+        overview_file_text = ""
+        if overview_file is not None:
+            try:
+                overview_file_text = overview_file.getvalue().decode(
+                    "utf-8", errors="replace"
+                ).strip()
+            except Exception:
+                overview_file_text = ""
+        project_overview = "\n\n".join(
+            t.strip() for t in [overview_text, overview_file_text] if t and t.strip()
+        ).strip()
 
         # ── Schema detection + override ──
         st.subheader("Detected Schema")
@@ -162,6 +200,7 @@ with st.sidebar:
         run_btn = st.button("Run Analysis", type="primary", use_container_width=True)
     else:
         raw_df = None
+        project_overview = ""
         selected_horizon = 30
         run_btn = False
 
@@ -172,14 +211,23 @@ with st.sidebar:
 # Run the pipeline
 # ---------------------------------------------------------------------------
 if run_btn and raw_df is not None:
+    if not project_overview.strip():
+        st.sidebar.error(
+            "Please provide a Project / Dataset Overview before running the analysis."
+        )
+        st.stop()
+
     # Reset previous results
     st.session_state.analysis_complete = False
     st.session_state.chat_history = []
+    st.session_state.results_explanation = None
+    st.session_state.results_chat_history = []
 
     graph = build_graph()
     initial_state = {
         "raw_df": raw_df,
         "selected_horizon": selected_horizon,
+        "project_overview": project_overview,
         # Schema is auto-detected and (optionally) edited in the sidebar above.
         # Falls back to DEFAULT_SCHEMA if the upload block didn't produce one.
         "schema": schema if schema else dict(DEFAULT_SCHEMA),
@@ -699,6 +747,64 @@ if st.session_state.analysis_complete:
             "All the data-science content — model comparison, SHAP plots, PR curves, "
             "data profile. Open any section to audit the pipeline."
         )
+
+        # ── Results Explainer (AI narration + Q&A) ──
+        with st.expander(
+            "🧭 Results Explainer — AI walkthrough of metrics & charts",
+            expanded=False,
+        ):
+            @st.fragment
+            def _results_explainer_fragment():
+                explanation = st.session_state.results_explanation
+
+                if explanation is None:
+                    if st.button(
+                        "Generate AI explanation of the results",
+                        type="primary", key="gen_results_explain",
+                    ):
+                        try:
+                            with st.spinner("Asking the analyst..."):
+                                st.session_state.results_explanation = explain_results(state)
+                        except Exception as e:
+                            st.error(f"Failed to generate explanation: {e}")
+                            return
+                        st.rerun(scope="fragment")
+                else:
+                    st.markdown(explanation)
+                    if st.button("Regenerate explanation", key="regen_results_explain"):
+                        try:
+                            with st.spinner("Regenerating..."):
+                                st.session_state.results_explanation = explain_results(state)
+                        except Exception as e:
+                            st.error(f"Failed to regenerate: {e}")
+                            return
+                        st.rerun(scope="fragment")
+
+                st.divider()
+                st.markdown("**Ask about the metrics and charts**")
+                for msg in st.session_state.results_chat_history:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
+                q = st.chat_input(
+                    "e.g. Why did XGBoost win on ROC-AUC but lose on profit?",
+                    key="results_chat_input",
+                )
+                if q:
+                    st.session_state.results_chat_history.append({"role": "user", "content": q})
+                    with st.chat_message("user"):
+                        st.markdown(q)
+                    with st.chat_message("assistant"):
+                        with st.spinner("Thinking..."):
+                            ans = handle_results_question(
+                                state, q,
+                                chat_history=st.session_state.results_chat_history[:-1],
+                            )
+                        st.markdown(ans)
+                    st.session_state.results_chat_history.append(
+                        {"role": "assistant", "content": ans}
+                    )
+
+            _results_explainer_fragment()
 
         # ── Data Profile ──
         with st.expander("🔍 Data Profile — class imbalance & missing-value reasoning", expanded=False):

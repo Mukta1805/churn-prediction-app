@@ -36,6 +36,7 @@ def _get_client():
 # Build the context string used by all three LLM calls
 # ---------------------------------------------------------------------------
 def _build_context(state: PipelineState) -> str:
+    project_overview = (state.get("project_overview") or "").strip()
     summary = state.get("dataset_summary", {})
     comparison = state.get("model_comparison", [])
     best = state.get("best_model_metrics", {})
@@ -79,8 +80,14 @@ def _build_context(state: PipelineState) -> str:
                 f"Rule: {s.get('rule', '')}"
             )
 
+    overview_block = ""
+    if project_overview:
+        overview_block = (
+            f"PROJECT / DATASET OVERVIEW (USER-PROVIDED):\n{project_overview}\n\n"
+        )
+
     context = f"""
-DATASET SUMMARY:
+{overview_block}DATASET SUMMARY:
 - {summary.get('rows', '?')} customers, {summary.get('columns', '?')} features
 - Churn rate: {summary.get('churn_rate_pct', '?')}%
 - {summary.get('rows_dropped', 0)} rows dropped due to missing values
@@ -116,8 +123,10 @@ TOP FEATURES BY SHAP IMPORTANCE:
 # ---------------------------------------------------------------------------
 _STRUCTURED_SYSTEM = """\
 You are a retention strategy analyst producing structured output for a business dashboard.
-You will receive churn-prediction analysis results and must respond with JSON in the exact
-schema below. Every field is required.
+You will receive churn-prediction analysis results — optionally prefixed with a user-provided
+project/dataset overview describing the business context — and must respond with JSON in the
+exact schema below. Every field is required. When the overview is present, tailor the
+executive summary, actions, and driver narratives to that business context.
 
 {
   "executive_summary": "2-3 sentence paragraph summarising the churn situation and what matters most. Business language only — no mention of ROC-AUC, SHAP, or model names.",
@@ -175,7 +184,9 @@ def _generate_structured_insights(context: str) -> dict:
 # Prompt 2 — legacy markdown insights (kept for Insights tab + chat context)
 # ---------------------------------------------------------------------------
 _MARKDOWN_SYSTEM = """You are a senior business analyst specializing in customer churn prediction.
-You will receive ML model results and SHAP feature analysis from a churn prediction pipeline.
+You will receive ML model results and SHAP feature analysis from a churn prediction pipeline,
+optionally prefixed with a user-provided project/dataset overview describing the business
+context. Use the overview, when present, to frame your analysis.
 Provide clear, actionable business insights in markdown format.
 
 Structure your response as:
@@ -232,7 +243,8 @@ def generate_insights_node(state: PipelineState) -> dict:
 # ---------------------------------------------------------------------------
 _CHAT_SYSTEM = """You are a churn-prediction analyst assistant. You have access to the results
 of a machine learning pipeline, including model metrics, customer segments, business aggregates,
-and feature importance analysis.
+and feature importance analysis. You may also receive a user-provided project/dataset overview
+describing the business context — incorporate it when answering.
 
 Answer questions about the model results, feature importance, customer segments, business
 impact, and retention strategies. Be specific and cite real numbers from the data provided.
