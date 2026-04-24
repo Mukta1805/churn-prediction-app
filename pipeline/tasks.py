@@ -5,6 +5,7 @@ variable instead of a global df, so the Streamlit app can set it dynamically.
 """
 
 import time
+import os
 import numpy as np
 import pandas as pd
 import d6tflow

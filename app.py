@@ -17,11 +17,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Support Streamlit Cloud secrets (fallback to .env for local dev)
-if "OPENAI_API_KEY" in st.secrets:
-    os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+try:
+    api_key = st.secrets.get("OPENAI_API_KEY")
+except Exception:
+    api_key = None
+
+if api_key:
+    os.environ["OPENAI_API_KEY"] = api_key
 
 from agents.graph import build_graph
 from agents.insight_generation import handle_chat_question
+from agents.results_explainer import explain_results, handle_results_question
 from agents.chart_agent import (
     pr_curve_figure,
     probability_distribution_figure,
@@ -58,6 +64,10 @@ if "sim_explanation" not in st.session_state:
     st.session_state.sim_explanation = None
 if "sim_constants" not in st.session_state:
     st.session_state.sim_constants = None
+if "results_explanation" not in st.session_state:
+    st.session_state.results_explanation = None
+if "results_chat_history" not in st.session_state:
+    st.session_state.results_chat_history = []
 
 # ---------------------------------------------------------------------------
 # Sidebar — Upload
@@ -75,6 +85,33 @@ with st.sidebar:
         st.success(f"Loaded {len(raw_df)} rows, {len(raw_df.columns)} columns")
         st.dataframe(raw_df.head(), height=200)
 
+        st.subheader("Project / Dataset Overview")
+        st.caption(
+            "Required. Provide a short overview of the dataset's project/business context "
+            "so the AI can tailor insights and Q&A to your use case."
+        )
+        overview_text = st.text_area(
+            "Describe the project and dataset (1–10 sentences)",
+            placeholder="Example: This dataset comes from our subscription SaaS product. "
+                        "Each row is a customer account with usage, billing, and support activity. "
+                        "Churn means cancellation within the selected horizon...",
+            height=140,
+        )
+        overview_file = st.file_uploader(
+            "Or upload a text/markdown file with the overview",
+            type=["txt", "md"],
+            help="Accepted formats: .txt, .md",
+        )
+
+        overview_file_text = ""
+        if overview_file is not None:
+            try:
+                overview_file_text = overview_file.getvalue().decode("utf-8", errors="replace").strip()
+            except Exception:
+                overview_file_text = ""
+
+        project_overview = "\n\n".join([t.strip() for t in [overview_text, overview_file_text] if t and t.strip()]).strip()
+
         st.subheader("Churn Horizon")
         selected_horizon = st.selectbox(
             "Define churn window",
@@ -86,6 +123,7 @@ with st.sidebar:
         run_btn = st.button("Run Analysis", type="primary", use_container_width=True)
     else:
         raw_df = None
+        project_overview = ""
         selected_horizon = 30
         run_btn = False
 
@@ -96,12 +134,22 @@ with st.sidebar:
 # Run the pipeline
 # ---------------------------------------------------------------------------
 if run_btn and raw_df is not None:
+    if not project_overview.strip():
+        st.sidebar.error("Please provide a Project / Dataset Overview before running the analysis.")
+        st.stop()
+
     # Reset previous results
     st.session_state.analysis_complete = False
     st.session_state.chat_history = []
+    st.session_state.results_explanation = None
+    st.session_state.results_chat_history = []
 
     graph = build_graph()
-    initial_state = {"raw_df": raw_df, "selected_horizon": selected_horizon}
+    initial_state = {
+        "raw_df": raw_df,
+        "selected_horizon": selected_horizon,
+        "project_overview": project_overview,
+    }
 
     step_labels = {
         "horizon_definition": f"Step 1/7: Defining {selected_horizon}-day churn horizon...",
@@ -204,6 +252,42 @@ if st.session_state.analysis_complete:
             display_df.columns = ["Model", "ROC-AUC", "PR-AUC", "F1", "Runtime (s)", "Optimal Threshold", "Expected Profit ($)"]
             st.dataframe(display_df, use_container_width=True, hide_index=True)
 
+        st.divider()
+        st.subheader("Explain These Results (AI)")
+        col_explain_l, col_explain_r = st.columns([1, 2])
+        with col_explain_l:
+            if st.button("Generate Explanation", use_container_width=True):
+                with st.spinner("Generating explanation..."):
+                    st.session_state.results_explanation = explain_results(state)
+
+        with col_explain_r:
+            if st.session_state.results_explanation:
+                st.markdown(st.session_state.results_explanation)
+            else:
+                st.caption("Generate a plain-English explanation of the metrics, threshold, profit framing, and how to read the charts.")
+
+        st.markdown("**Ask a question about model results / charts**")
+        for msg in st.session_state.results_chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        results_q = st.text_input(
+            "Question",
+            placeholder="E.g., Why is PR-AUC more important than ROC-AUC for our project? What does the optimal threshold imply operationally?",
+            key="results_question_input",
+        )
+        if st.button("Ask", key="ask_results_btn"):
+            if results_q.strip():
+                st.session_state.results_chat_history.append({"role": "user", "content": results_q})
+                with st.spinner("Thinking..."):
+                    answer = handle_results_question(
+                        state,
+                        results_q,
+                        chat_history=st.session_state.results_chat_history[:-1],
+                    )
+                st.session_state.results_chat_history.append({"role": "assistant", "content": answer})
+                st.rerun()
+
         best = state.get("best_model_metrics", {})
         if best:
             st.success(
@@ -271,6 +355,7 @@ if st.session_state.analysis_complete:
     with tab_charts:
         st.subheader("Model Diagnostics")
         st.caption("Four charts built from the best model's test-set predictions.")
+        st.caption("Tip: Use the **Explain These Results (AI)** section in the Model Results tab to interpret these charts in your project context.")
 
         col1, col2 = st.columns(2)
 
