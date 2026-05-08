@@ -43,9 +43,9 @@ class PipelineState(TypedDict, total=False):
     # Used both by the insight agent (as context) and by the Executive Summary UI.
     business_aggregates: dict
     # {
-    #   "at_risk_count": int,              customers predicted to churn at optimal threshold
-    #   "at_risk_pct": float,              % of customer base
-    #   "revenue_at_stake": float,         at_risk_count × customer_value
+    #   "at_risk_count": int,              rounded expected churners from summed probabilities
+    #   "at_risk_pct": float,              expected churn rate
+    #   "revenue_at_stake": float,         expected_churners × customer_value
     #   "projected_profit": float,         expected profit from retention campaign at optimal threshold
     #   "risk_bucket_counts": {"high": int, "medium": int, "low": int},
     #   "top_at_risk_customers": list[dict],  top-N individual customers with highest predicted prob

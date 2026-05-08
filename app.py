@@ -29,7 +29,6 @@ from agents.chart_agent import (
     cumulative_gains_figure,
     lift_chart_figure,
 )
-from agents.simulation_agent import simulate_profit, explain_simulation
 from agents.customer_simulation_agent import (
     predict_profile_risk,
     simulate_feature_sensitivity,
@@ -60,12 +59,6 @@ if "analysis_complete" not in st.session_state:
     st.session_state.analysis_complete = False
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-if "sim_result" not in st.session_state:
-    st.session_state.sim_result = None
-if "sim_explanation" not in st.session_state:
-    st.session_state.sim_explanation = None
-if "sim_constants" not in st.session_state:
-    st.session_state.sim_constants = None
 if "cust_sim_cache" not in st.session_state:
     st.session_state.cust_sim_cache = {}
 if "results_explanation" not in st.session_state:
@@ -87,7 +80,23 @@ with st.sidebar:
     schema = None  # filled in after upload
     project_overview = ""
     if uploaded_file is not None:
-        raw_df = pd.read_csv(uploaded_file)
+        try:
+            raw_df = pd.read_csv(uploaded_file)
+            _skipped_rows = 0
+        except pd.errors.ParserError as _parse_err:
+            # Some CSVs have rows with unquoted commas in text columns (e.g. city
+            # names like "Austin, TX") which produce extra fields. Skip those rows
+            # and warn the user so they know data was dropped.
+            uploaded_file.seek(0)
+            raw_df = pd.read_csv(uploaded_file, on_bad_lines="skip")
+            _skipped_rows = -1  # exact count unavailable; flag that skipping happened
+            st.warning(
+                f"**CSV formatting issue:** some rows had unexpected extra fields "
+                f"(likely unquoted commas inside a text column such as a city name). "
+                f"Those rows were skipped automatically. "
+                f"Check columns like `city`, `complaint_type`, or `survey_response` for "
+                f"values containing commas.  \n_Detail: {_parse_err}_"
+            )
         st.success(f"Loaded {len(raw_df)} rows, {len(raw_df.columns)} columns")
         st.dataframe(raw_df.head(), height=200)
 
@@ -254,7 +263,7 @@ if run_btn and raw_df is not None:
         "clean_data":           f"Step {4 + offset}/{n_steps}: Cleaning data...",
         "run_model_pipeline":   f"Step {5 + offset}/{n_steps}: Training models with Bayesian optimization (~1-2 min)...",
         "compute_shap":         f"Step {6 + offset}/{n_steps}: Computing SHAP explanations...",
-        "business_aggregates":  f"Step {7 + offset}/{n_steps}: Computing business aggregates (at-risk counts, revenue impact)...",
+        "business_aggregates":  f"Step {7 + offset}/{n_steps}: Computing business aggregates (expected churners, revenue impact)...",
         "segment_discovery":    f"Step {8 + offset}/{n_steps}: Discovering customer segments...",
         "generate_insights":    f"Step {9 + offset}/{n_steps}: Generating business insights with AI...",
     }
@@ -423,6 +432,17 @@ if st.session_state.analysis_complete:
 
         # Hero KPI cards (computed from business_aggregates, always available)
         st.subheader("Key Numbers")
+
+        _campaign_contact_pct = aggregates.get("campaign_contact_pct", 0)
+        _threshold_used = aggregates.get("threshold_used", 0.5)
+        if _campaign_contact_pct > 60:
+            st.warning(
+                f"**Broad campaign flag:** {_campaign_contact_pct}% of the test set is above "
+                f"the optimal contact threshold ({_threshold_used:.3f}). This is the suggested "
+                f"retention outreach pool, not the expected churn rate. Try adjusting the "
+                f"business constants in `pipeline/config.py` to tune the threshold."
+            )
+
         k1, k2, k3, k4, k5 = st.columns(5)
         k1.metric("Customers Analysed", f"{summary.get('rows', 0):,}")
         k2.metric(
@@ -432,9 +452,9 @@ if st.session_state.analysis_complete:
             delta_color="off",
         )
         k3.metric(
-            "Predicted At-Risk",
+            "Expected Churners",
             f"{aggregates.get('at_risk_count', 0):,}",
-            delta=f"{aggregates.get('at_risk_pct', 0)}% of test set",
+            delta=f"{aggregates.get('at_risk_pct', 0)}% expected rate",
             delta_color="off",
         )
         k4.metric(
@@ -672,15 +692,7 @@ if st.session_state.analysis_complete:
 
     # ── Tab 4: Simulation ──
     with tab_sim:
-        sim_customer_tab, sim_business_tab = st.tabs([
-            "🧑‍💼 Customer What-If Simulator",
-            "💰 Business Assumption Simulator",
-        ])
-
-        # ══════════════════════════════════════════════════════════════════
-        # Sub-tab A — Customer What-If Simulator
-        # ══════════════════════════════════════════════════════════════════
-        with sim_customer_tab:
+        if True:  # Customer What-If Simulator
             simulation_profiles = state.get("simulation_profiles") or []
             best_pipeline = state.get("best_pipeline")
             clean_df_sim = state.get("clean_df")
@@ -806,15 +818,12 @@ if st.session_state.analysis_complete:
                     delta_pp = (new_prob - base_prob) * 100
 
                     st.markdown("")
-                    r1, r2 = st.columns(2)
-                    r1.metric(
+                    st.metric(
                         "New Predicted Risk",
                         f"{new_prob:.1%}",
-                        delta=f"{delta_pp:+.1f} pp",
+                        delta=f"{delta_pp:+.1f} pp" if abs(delta_pp) >= 0.05 else "no change",
                         delta_color="inverse",
                     )
-                    direction = "lower ↓" if delta_pp < -0.05 else ("higher ↑" if delta_pp > 0.05 else "unchanged")
-                    r2.metric("Change", f"{abs(delta_pp):.1f} pp {direction}")
 
                     st.caption(
                         "Model-predicted risk would change. "
@@ -957,132 +966,6 @@ if st.session_state.analysis_complete:
                         "predicted churn risk with the available candidate values."
                     )
 
-        # ══════════════════════════════════════════════════════════════════
-        # Sub-tab B — Business Assumption Simulator (renamed, unchanged logic)
-        # ══════════════════════════════════════════════════════════════════
-        with sim_business_tab:
-            st.subheader("Business Assumption Simulator")
-            st.caption(
-                "Adjust cost and conversion assumptions to see how the optimal decision "
-                "threshold and expected profit change. No retraining — uses the trained "
-                "model's test-set predictions. "
-                "**This simulator changes economics/threshold optimisation, not customer attributes.**"
-            )
-
-            baseline_metrics = state.get("best_model_metrics", {})
-            predictions = state.get("predictions", {})
-
-            @st.fragment
-            def _simulation_fragment():
-                """Scoped rerun — pressing Run Simulation only reruns this block."""
-                col_l, col_r = st.columns([1, 1])
-
-                with col_l:
-                    st.markdown("**Adjust assumptions**")
-                    cv = st.slider(
-                        "Customer lifetime value ($)",
-                        min_value=100, max_value=2000,
-                        value=BUSINESS_CONSTANTS["customer_value"], step=50,
-                    )
-                    cc = st.slider(
-                        "Contact cost ($)",
-                        min_value=1, max_value=100,
-                        value=BUSINESS_CONSTANTS["contact_cost"], step=1,
-                    )
-                    rsr = st.slider(
-                        "Retention success rate (%)",
-                        min_value=5, max_value=80,
-                        value=int(BUSINESS_CONSTANTS["retention_success_rate"] * 100), step=5,
-                    )
-                    mcl = st.slider(
-                        "Missed churn loss ($)",
-                        min_value=100, max_value=2000,
-                        value=BUSINESS_CONSTANTS["missed_churn_loss"], step=50,
-                    )
-                    run_sim = st.button(
-                        "Run Simulation", type="primary", use_container_width=True,
-                        key="sim_run_btn",
-                    )
-
-                if run_sim and predictions:
-                    new_constants = {
-                        "customer_value": cv,
-                        "contact_cost": cc,
-                        "retention_success_rate": rsr / 100,
-                        "missed_churn_loss": mcl,
-                    }
-                    with st.spinner("Computing..."):
-                        result = simulate_profit(
-                            y_test=predictions["y_test"],
-                            y_prob=predictions["y_prob"],
-                            **new_constants,
-                        )
-                        explanation = explain_simulation(
-                            baseline_metrics=baseline_metrics,
-                            baseline_constants=BUSINESS_CONSTANTS,
-                            new_result=result,
-                            new_constants=new_constants,
-                        )
-                    st.session_state.sim_result = result
-                    st.session_state.sim_explanation = explanation
-                    st.session_state.sim_constants = new_constants
-
-                with col_r:
-                    st.markdown("**Results**")
-                    sim = st.session_state.sim_result
-                    baseline_profit = baseline_metrics.get("expected_profit", 0)
-                    baseline_threshold = baseline_metrics.get("optimal_threshold", 0.5)
-
-                    if sim:
-                        delta_profit = sim["expected_profit"] - baseline_profit
-                        delta_threshold = sim["optimal_threshold"] - baseline_threshold
-
-                        m1, m2 = st.columns(2)
-                        m1.metric(
-                            "Optimal Threshold",
-                            f"{sim['optimal_threshold']:.3f}",
-                            delta=f"{delta_threshold:+.3f}",
-                        )
-                        m2.metric(
-                            "Expected Profit",
-                            f"${sim['expected_profit']:,.0f}",
-                            delta=f"${delta_profit:+,.0f}",
-                        )
-                        m3, m4 = st.columns(2)
-                        m3.metric("Contacts Made", f"{sim['contacts_made']:,}")
-                        m4.metric("Churners Missed", f"{sim['churners_missed']:,}")
-
-                        fig, ax = plt.subplots(figsize=(6, 3.5))
-                        ax.plot(
-                            baseline_metrics["threshold_curve"],
-                            baseline_metrics["profit_curve"],
-                            color="#C8D0E0", lw=1.5, label="Baseline",
-                        )
-                        ax.plot(
-                            sim["threshold_curve"],
-                            sim["profit_curve"],
-                            color="#2563EB", lw=2, label="Simulation",
-                        )
-                        ax.axvline(baseline_threshold, color="#C8D0E0", linestyle="--", lw=1)
-                        ax.axvline(sim["optimal_threshold"], color="#2563EB", linestyle="--", lw=1)
-                        ax.set_xlabel("Threshold")
-                        ax.set_ylabel("Expected Profit ($)")
-                        ax.set_title("Profit Curve: Baseline vs Simulation")
-                        ax.legend()
-                        plt.tight_layout()
-                        st.pyplot(fig)
-                        plt.close(fig)
-
-                        if st.session_state.sim_explanation:
-                            st.info(st.session_state.sim_explanation)
-                    else:
-                        st.markdown(
-                            f"Baseline — threshold: **{baseline_threshold:.3f}** · "
-                            f"profit: **${baseline_profit:,.0f}**"
-                        )
-                        st.caption("Adjust the sliders and click Run Simulation to see what changes.")
-
-            _simulation_fragment()
 
     # ══════════════════════════════════════════════════════════════════════
     # Tab 5 — Ask Questions (chat)
@@ -1351,7 +1234,7 @@ else:
     with lc1:
         st.markdown("#### 🎯 Executive Summary")
         st.caption(
-            "Bottom-line KPIs — at-risk count, revenue at stake, projected retention "
+            "Bottom-line KPIs — expected churners, revenue at stake, projected retention "
             "profit, and the top 3 things you should do this week."
         )
     with lc2:
@@ -1379,7 +1262,7 @@ The system runs an automated multi-agent pipeline (hidden from you by default):
 6. **Data cleaning** — drops ID columns and computes summary stats
 7. **Model training** — 5 ML models with Bayesian hyperparameter tuning
 8. **SHAP explainability** — extracts feature-level importance
-9. **Business aggregates** — computes at-risk counts, revenue at stake, risk buckets
+9. **Business aggregates** — computes expected churners, revenue at stake, risk buckets
 10. **Segment discovery** — surrogate decision tree + LLM naming for interpretable segments
 11. **Insight generation** — AI produces the executive summary, top actions, and driver narratives
 

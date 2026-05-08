@@ -3,8 +3,8 @@
 This is a pure-Python node (no LLM). It turns the model's raw test-set predictions
 into the sort of numbers a retention manager actually asks about:
 
-  * How many customers are predicted to churn?  (at optimal threshold)
-  * What's the revenue at stake?                (at-risk count × customer_value)
+  * How many customers are expected to churn?   (sum of churn probabilities)
+  * What's the revenue at stake?                (expected churners × customer_value)
   * If we run a retention campaign, what's the expected profit?
   * Break the customer base into high/medium/low-risk buckets
   * Who are the top-N highest-risk individuals? (for the Who's at Risk tab)
@@ -51,14 +51,21 @@ def business_aggregates_node(state: PipelineState) -> dict:
     y_test = np.array(preds["y_test"])
     threshold = float(best.get("optimal_threshold", 0.5))
 
-    # ── Predicted at-risk count (at the model's optimal threshold) ──
+    # ── Expected churn exposure ──
+    # The optimal threshold defines the retention-campaign contact list, not a
+    # literal "everyone above this line will churn" forecast. For revenue at
+    # stake, use expected value from probabilities to avoid treating every
+    # contacted customer as a guaranteed loss.
     at_risk_mask = y_prob >= threshold
-    at_risk_count = int(at_risk_mask.sum())
-    at_risk_pct = round(float(at_risk_mask.mean()) * 100, 1)
+    campaign_contact_count = int(at_risk_mask.sum())
+    campaign_contact_pct = round(float(at_risk_mask.mean()) * 100, 1)
+    expected_churners = float(y_prob.sum())
+    at_risk_count = int(round(expected_churners))
+    at_risk_pct = round(float(y_prob.mean()) * 100, 1)
 
     # ── Revenue at stake & projected profit ──
     cv = BUSINESS_CONSTANTS["customer_value"]
-    revenue_at_stake = float(at_risk_count * cv)
+    revenue_at_stake = float(expected_churners * cv)
     projected_profit = float(best.get("expected_profit", 0.0))
 
     # ── Risk buckets (low / medium / high) ──
@@ -86,6 +93,9 @@ def business_aggregates_node(state: PipelineState) -> dict:
         "revenue_at_stake": round(revenue_at_stake, 2),
         "projected_profit": round(projected_profit, 2),
         "threshold_used": round(threshold, 3),
+        "campaign_contact_count": campaign_contact_count,
+        "campaign_contact_pct": campaign_contact_pct,
+        "expected_churners": round(expected_churners, 2),
         "customer_value": cv,
         "risk_bucket_counts": risk_bucket_counts,
         "top_at_risk_customers": top_rows,
@@ -93,7 +103,7 @@ def business_aggregates_node(state: PipelineState) -> dict:
     }
 
     msg = (
-        f"Aggregates: {at_risk_count} customers at risk ({at_risk_pct}% of test set), "
+        f"Aggregates: {at_risk_count} expected churners ({at_risk_pct}% expected rate), "
         f"${revenue_at_stake:,.0f} revenue at stake, projected profit ${projected_profit:,.0f}"
     )
 

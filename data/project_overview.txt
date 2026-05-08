@@ -1,0 +1,20 @@
+This dataset is a synthetic customer churn dataset for a B2C/B2B subscription product. Each row represents one customer account. The goal is to predict which customers are at risk of cancelling their subscription within a given time window and to understand the key drivers of churn.
+
+The dataset contains 10,000 customers across three segments: Individual consumers, SMEs (small-to-medium businesses), and Enterprise accounts. Customers are spread across seven countries (Australia, Bangladesh, Canada, Germany, India, UK, USA) and acquired through three channels: Web, Mobile, and Referral. Contract types are Monthly, Quarterly, and Yearly.
+
+The target column is "churn" (1 = churned, 0 = retained). The observed churn rate is approximately 10%, making this a moderately imbalanced classification problem.
+
+Feature categories in this dataset:
+
+- Demographics and account identity: gender, age, country, city, customer_segment, signup_channel
+- Tenure and contract: tenure_months, contract_type
+- Product engagement: monthly_logins, weekly_active_days, avg_session_time, features_used, usage_growth_rate, last_login_days_ago
+- Revenue and billing: monthly_fee, total_revenue, payment_method, payment_failures, discount_applied, price_increase_last_3m
+- Support and satisfaction: support_tickets, avg_resolution_time, complaint_type, csat_score, escalations
+- Marketing signals: email_open_rate, marketing_click_rate, nps_score, survey_response, referral_count
+
+The business use case is a retention analytics team that wants to identify at-risk customers before they churn, understand which product and service signals matter most, and prioritise outreach campaigns by expected return. The team is primarily business analysts, not data scientists, so insights should be framed in plain language with clear action recommendations.
+
+Churn is defined as account cancellation within the chosen prediction horizon. The tenure column (tenure_months) can be used to define 30-, 60-, or 90-day churn windows. There is no data leakage concern as the dataset is already a historical snapshot.
+
+Key questions this analysis should answer: Which customer segments and geographies churn most? Which engagement, billing, and support signals are the strongest predictors? What is the expected revenue at risk and the optimal threshold for a retention campaign given contact cost and conversion rate assumptions?
