@@ -17,8 +17,14 @@ class PipelineState(TypedDict, total=False):
     #   target_col      – the binary churn label column (e.g. "churn", "Exited", "Attrition")
     #   id_cols         – columns to drop before modelling (IDs, free text, geography)
     #   tenure_col      – numeric column representing customer age in months (or None)
+    #   value_col       – numeric column representing customer revenue/value, used by
+    #                     business_aggregates to compute "revenue at stake" honestly
+    #                     (or None → fall back to user-input customer_value)
     #   positive_label  – the raw value in target_col that means "churned" (e.g. "Yes", 1, True)
     schema: dict
+
+    # User-input fallback CLV when the dataset has no value column on the schema.
+    customer_value: float
 
     # ── Horizon Definition outputs ──
     selected_horizon: int           # e.g. 30, 60, or 90
@@ -43,12 +49,24 @@ class PipelineState(TypedDict, total=False):
     # Used both by the insight agent (as context) and by the Executive Summary UI.
     business_aggregates: dict
     # {
-    #   "at_risk_count": int,              customers predicted to churn at optimal threshold
-    #   "at_risk_pct": float,              % of customer base
-    #   "revenue_at_stake": float,         at_risk_count × customer_value
-    #   "projected_profit": float,         expected profit from retention campaign at optimal threshold
+    #   # AT-RISK = customers with churn prob ≥ at_risk_threshold (default 0.50)
+    #   "at_risk_count": int,
+    #   "at_risk_pct": float,
+    #   "at_risk_threshold": float,
+    #   # CONTACT LIST = customers above the profit-optimal threshold
+    #   "contact_list_count": int,
+    #   "contact_list_pct": float,
+    #   "optimal_threshold": float,
+    #   # REVENUE = sum of value_col for at-risk customers, or count × CLV fallback
+    #   "revenue_at_stake": float,
+    #   "revenue_methodology": str,        human-readable description of how it was computed
+    #   "value_col": str | None,           value column actually used (None → CLV fallback)
+    #   "customer_value": float,           CLV that was used if no value_col
+    #   # PROFIT (unchanged)
+    #   "projected_profit": float,         expected profit at optimal threshold
     #   "risk_bucket_counts": {"high": int, "medium": int, "low": int},
-    #   "top_at_risk_customers": list[dict],  top-N individual customers with highest predicted prob
+    #   "top_at_risk_customers": list[dict],
+    #   "test_set_size": int,
     # }
 
     # ── Segments (Node: segment_discovery) ──

@@ -38,6 +38,16 @@ _TENURE_KEYWORDS = [
     "signup_age", "membership_months",
 ]
 
+# Revenue/value columns — used to compute "revenue at stake" honestly per dataset.
+# Order matters: more specific names first so we prefer total_revenue over revenue.
+_VALUE_KEYWORDS = [
+    "total_revenue", "lifetime_value", "ltv", "clv", "customer_value",
+    "annual_revenue", "arr", "monthly_revenue", "mrr",
+    "contract_value", "account_value", "acv",
+    "monthly_fee", "monthly_charges", "monthly_charge",
+    "revenue", "spend", "value", "fee", "price",
+]
+
 _ID_NAME_PATTERNS = [
     r".*_id$", r"^id$", r".*_uuid$", r"^uuid$",
     r"^customer$", r"^user$",
@@ -134,6 +144,44 @@ def _detect_id_cols(df: pd.DataFrame) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Value column (revenue / CLV)
+# ---------------------------------------------------------------------------
+def _detect_value_col(
+    df: pd.DataFrame,
+    skip: list[str] | None = None,
+) -> str | None:
+    """Best-guess numeric column representing customer value/revenue.
+
+    Used by business_aggregates to compute 'revenue at stake' honestly per
+    dataset, rather than multiplying the at-risk count by a hardcoded CLV.
+    """
+    skip_set = set(skip or [])
+    numeric_cols = [
+        c for c in df.select_dtypes(include="number").columns
+        if c not in skip_set
+    ]
+    if not numeric_cols:
+        return None
+
+    # Iterate keywords longest-first so 'total_revenue' wins over 'revenue'.
+    sorted_keywords = sorted(_VALUE_KEYWORDS, key=len, reverse=True)
+
+    # Exact-name match first
+    for kw in sorted_keywords:
+        for col in numeric_cols:
+            if _norm(col) == kw:
+                return col
+
+    # Substring match
+    for kw in sorted_keywords:
+        for col in numeric_cols:
+            if kw in _norm(col):
+                return col
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Positive label
 # ---------------------------------------------------------------------------
 def _detect_positive_label(df: pd.DataFrame, target_col: str | None) -> Any:
@@ -157,9 +205,12 @@ def detect_schema(df: pd.DataFrame) -> dict:
     that target_col is non-None before running the pipeline.
     """
     target_col = _detect_target(df)
+    id_cols = _detect_id_cols(df)
     return {
         "target_col": target_col,
-        "id_cols": _detect_id_cols(df),
+        "id_cols": id_cols,
         "tenure_col": _detect_tenure_col(df),
+        # Value column: skip target + ids so we don't accidentally pick the label.
+        "value_col": _detect_value_col(df, skip=([target_col] if target_col else []) + id_cols),
         "positive_label": _detect_positive_label(df, target_col),
     }
