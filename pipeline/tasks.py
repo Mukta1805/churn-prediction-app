@@ -101,9 +101,9 @@ class TrainModel(d6tflow.tasks.TaskPickle):
         numeric_cols = X_train.select_dtypes(exclude=["object"]).columns
 
         cfg = _imbalance_config
-        logreg_cw = cfg.get("logreg_class_weight", "balanced")
-        rf_cw = cfg.get("rf_class_weight", "balanced")
-        lgbm_cw = cfg.get("lgbm_class_weight", "balanced")
+        logreg_cw = cfg.get("logreg_class_weight")
+        rf_cw = cfg.get("rf_class_weight")
+        lgbm_cw = cfg.get("lgbm_class_weight")
         xgb_spw = cfg.get("xgb_scale_pos_weight", 1.0)
         cv_metric = cfg.get("primary_metric", "roc_auc")
 

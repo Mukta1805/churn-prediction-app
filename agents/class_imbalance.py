@@ -15,20 +15,18 @@ def class_imbalance_node(state: PipelineState) -> dict:
 
     is_imbalanced = minority_ratio < 0.20
 
-    # XGBoost uses scale_pos_weight = majority_count / minority_count
-    scale_pos_weight = round(n_majority / n_minority, 2) if n_minority > 0 else 1.0
-
     imbalance_config = {
         "minority_ratio": round(float(minority_ratio), 4),
         "minority_count": n_minority,
         "majority_count": n_majority,
         "is_imbalanced": is_imbalanced,
-        # Use PR-AUC as primary CV metric when data is imbalanced (ROC-AUC is over-optimistic)
+        # Use PR-AUC as primary CV metric when data is imbalanced (ROC-AUC is over-optimistic).
+        # Keep class weights neutral so predict_proba remains usable as business probability.
         "primary_metric": "average_precision" if is_imbalanced else "roc_auc",
-        "logreg_class_weight": "balanced" if is_imbalanced else None,
-        "rf_class_weight": "balanced" if is_imbalanced else None,
-        "lgbm_class_weight": "balanced" if is_imbalanced else None,
-        "xgb_scale_pos_weight": scale_pos_weight if is_imbalanced else 1.0,
+        "logreg_class_weight": None,
+        "rf_class_weight": None,
+        "lgbm_class_weight": None,
+        "xgb_scale_pos_weight": 1.0,
     }
 
     status = "imbalanced" if is_imbalanced else "balanced"
@@ -38,9 +36,8 @@ def class_imbalance_node(state: PipelineState) -> dict:
     )
     if is_imbalanced:
         msg += (
-            f". Mitigation: class_weight=balanced, "
-            f"xgb_scale_pos_weight={scale_pos_weight}, "
-            f"CV metric=average_precision"
+            ". Mitigation: CV metric=average_precision; class weights left neutral "
+            "to keep churn probabilities calibrated for revenue estimates"
         )
 
     return {
