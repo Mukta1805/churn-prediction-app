@@ -38,6 +38,7 @@ DEFAULT_SCHEMA = {
     "target_col": "churn",
     "id_cols": ["customer_id", "city"],
     "tenure_col": "tenure_months",   # None → horizon agent is skipped
+    "value_col": "total_revenue",    # None → fall back to user-input customer_value
     "positive_label": 1,             # raw value in target_col that means "churned"
 }
 

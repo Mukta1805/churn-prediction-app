@@ -173,6 +173,42 @@ with st.sidebar:
         )
         tenure_col = None if tenure_choice == tenure_options[0] else tenure_choice
 
+        # ── Value column (revenue/CLV) ──
+        # Used by business_aggregates to compute "revenue at stake" honestly.
+        # If none, the user owns the CLV assumption via the slider below.
+        value_options = ["(none — use CLV slider below)"] + [
+            c for c in raw_df.select_dtypes(include="number").columns.tolist()
+        ]
+        value_default_idx = (
+            value_options.index(detected["value_col"])
+            if detected.get("value_col") in value_options
+            else 0
+        )
+        value_choice = st.selectbox(
+            "Customer value column (revenue/CLV per customer)",
+            options=value_options,
+            index=value_default_idx,
+            help=(
+                "Numeric column representing per-customer revenue or lifetime value. "
+                "Used to compute 'revenue at stake' from the actual data. "
+                "If absent, set a placeholder CLV below."
+            ),
+        )
+        value_col = None if value_choice == value_options[0] else value_choice
+
+        # CLV fallback shown only when no value column is selected.
+        if value_col is None:
+            customer_value_input = st.number_input(
+                "Placeholder customer lifetime value ($)",
+                min_value=10, max_value=100000, value=500, step=50,
+                help=(
+                    "Used as a stand-in for per-customer revenue when the dataset has no "
+                    "value column. Revenue at stake = at-risk count × this number."
+                ),
+            )
+        else:
+            customer_value_input = 500  # ignored when value_col is set
+
         # ── Positive label ──
         unique_target_vals = (
             sorted(raw_df[target_col].dropna().unique().tolist(), key=str)
@@ -198,6 +234,7 @@ with st.sidebar:
             "target_col": target_col,
             "id_cols": id_cols,
             "tenure_col": tenure_col,
+            "value_col": value_col,
             "positive_label": positive_label,
         }
 
@@ -219,6 +256,7 @@ with st.sidebar:
         raw_df = None
         project_overview = ""
         selected_horizon = 30
+        customer_value_input = 500
         run_btn = False
 
     st.divider()
@@ -249,6 +287,8 @@ if run_btn and raw_df is not None:
         # Schema is auto-detected and (optionally) edited in the sidebar above.
         # Falls back to DEFAULT_SCHEMA if the upload block didn't produce one.
         "schema": schema if schema else dict(DEFAULT_SCHEMA),
+        # Placeholder CLV — only used when schema.value_col is None.
+        "customer_value": float(customer_value_input),
     }
 
     has_horizon = bool(initial_state["schema"].get("tenure_col"))
@@ -431,43 +471,54 @@ if st.session_state.analysis_complete:
         st.markdown("")  # spacing
 
         # Hero KPI cards (computed from business_aggregates, always available)
+        # Two rows:
+        #   Row 1 — situational  (size of the problem)
+        #   Row 2 — action       (what the profit math says to do about it)
         st.subheader("Key Numbers")
 
-        _campaign_contact_pct = aggregates.get("campaign_contact_pct", 0)
-        _threshold_used = aggregates.get("threshold_used", 0.5)
-        if _campaign_contact_pct > 60:
-            st.warning(
-                f"**Broad campaign flag:** {_campaign_contact_pct}% of the test set is above "
-                f"the optimal contact threshold ({_threshold_used:.3f}). This is the suggested "
-                f"retention outreach pool, not the expected churn rate. Try adjusting the "
-                f"business constants in `pipeline/config.py` to tune the threshold."
-            )
-
-        k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("Customers Analysed", f"{summary.get('rows', 0):,}")
-        k2.metric(
+        st.markdown("**Situation**")
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("Customers Analysed", f"{summary.get('rows', 0):,}")
+        s2.metric(
             "Observed Churn Rate",
             f"{summary.get('churn_rate_pct', 0):.2f}%",
             delta="historical",
             delta_color="off",
         )
-        k3.metric(
-            "Expected Churners",
+        at_risk_thr = aggregates.get("at_risk_threshold", 0.50)
+        s3.metric(
+            "At-Risk Customers",
             f"{aggregates.get('at_risk_count', 0):,}",
             delta=f"{aggregates.get('at_risk_pct', 0)}% expected rate",
             delta_color="off",
         )
-        k4.metric(
+        s3.caption(f"Predicted churn probability ≥ {at_risk_thr:.0%}")
+        s4.metric(
             "Revenue at Stake",
             f"${aggregates.get('revenue_at_stake', 0):,.0f}",
-            delta=f"@ ${aggregates.get('customer_value', 0)}/cust",
+        )
+        s4.caption(aggregates.get("revenue_methodology", ""))
+
+        st.markdown("**Action (per profit math)**")
+        a1, a2 = st.columns(2)
+        opt_thr = aggregates.get("optimal_threshold", aggregates.get("threshold_used", 0))
+        a1.metric(
+            "Recommended for Outreach",
+            f"{aggregates.get('contact_list_count', 0):,}",
+            delta=f"{aggregates.get('contact_list_pct', 0)}% of test set",
             delta_color="off",
         )
-        k5.metric(
+        a1.caption(
+            f"Customers above the profit-optimal threshold ({opt_thr:.2f}). "
+            "Contacting them maximises expected retention profit."
+        )
+        a2.metric(
             "Retention Profit",
             f"${aggregates.get('projected_profit', 0):,.0f}",
-            delta=f"threshold {aggregates.get('threshold_used', 0)}",
-            delta_color="off",
+        )
+        a2.caption(
+            "Expected profit if you contact the recommended list, given current "
+            "business assumptions (CLV, contact cost, retention rate, missed-churn loss)."
         )
 
         st.divider()
